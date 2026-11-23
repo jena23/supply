@@ -14,6 +14,7 @@ h1{font:700 21px "Times New Roman",serif;text-align:center;margin:6px 0 22px}
 .ent{display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;font-weight:700;margin-bottom:6px}
 .ent label{display:flex;gap:6px;align-items:baseline}
 input,select{font:inherit;color:#000;background:transparent;border:0;border-radius:0;padding:1px 3px;min-width:0}
+input.dup{border-bottom:2px solid #b3261e!important;background:#fde2e0!important}
 input:focus,select:focus{outline:2px solid #1a4fd6;outline-offset:0}
 .ent input{font-weight:700;border-bottom:1px dotted #777}
 table{border-collapse:collapse;width:100%}
@@ -65,6 +66,7 @@ button.b.g{background:#fff;color:#14213d}
 <button class="tab on" id="tL" type="button">Ledger Card</button>
 <button class="tab" id="tS" type="button">Monthly Summary</button>
 <button class="tab" id="tM" type="button">Masterlist</button>
+<button class="tab" id="tA" type="button">Add Item</button>
 </div>
 <div class="bar" id="itemBar">
 <select id="isel" aria-label="Supply item"></select>
@@ -98,7 +100,7 @@ button.b.g{background:#fff;color:#14213d}
 </div>
 
 <table class="hdr">
-<tr><td style="width:62%"><label>Item :<input id="item"></label></td><td><label>Item Code :<input id="code"></label></td></tr>
+<tr><td style="width:62%"><label>Item :<input id="item"></label></td><td><label>Item Code :<input id="code"><span id="cwarn" role="alert" style="color:#b3261e;font-size:12px;white-space:nowrap"></span></label></td></tr>
 <tr><td><label>Description :<input id="desc"></label></td><td><label>Re-order Point :<input id="rop" type="number" min="0" step="any"></label></td></tr>
 <tr><td colspan="2"><label>Unit of Measurement :<input id="uom"></label></td></tr>
 </table>
@@ -149,6 +151,29 @@ button.b.g{background:#fff;color:#14213d}
 <p class="note">Amounts in pesos, from the ledger cards. Beginning Balance = cost on hand at the start of the month; Ending Balance = Beginning + Receipts − Issues.</p>
 </div>
 
+<div class="sheet" id="vA" hidden>
+<h1>ADD ITEM TO MASTERLIST</h1>
+<form class="entry" id="af" autocomplete="off" style="margin-top:0">
+<div class="erow">
+<label>Category<select id="acat"></select></label>
+<label>Item Code<input id="acode" placeholder="e.g., OS-001"></label>
+<label>Item<input id="aitem" required placeholder="e.g., Bond paper, A4"></label>
+<label>Description<input id="adesc"></label>
+<label>Unit of Measurement<input id="auom" placeholder="e.g., ream, box, pc"></label>
+<label>Re-order Point<input id="arop" type="number" min="0" step="any"></label>
+</div>
+<h2 style="margin:16px 0 8px">Beginning balance (optional)</h2>
+<div class="erow">
+<label>Date<input id="abd" type="date"></label>
+<label>Quantity<input id="abq" type="number" min="0" step="any"></label>
+<label>Unit cost (₱)<input id="abu" type="number" min="0" step="any"></label>
+<button class="b" type="submit">Add to masterlist</button>
+</div>
+<div id="amsg" role="status" style="margin-top:10px"></div>
+</form>
+<p class="note">Leave the beginning balance empty if the item has no stock yet. You can enter a beginning balance or receipts later on its ledger card.</p>
+</div>
+
 <div class="sheet" id="vM" hidden>
 <h1>MASTERLIST OF SUPPLIES INVENTORY</h1>
 <p class="sub" id="msub"></p>
@@ -178,12 +203,23 @@ if(S.fund===undefined)S.fund='Regular';
 if(!S.items.length)S.items.push(newItem());
 if(!S.items.some(i=>i.id===S.cur))S.cur=S.items[0].id;
 const cur=()=>S.items.find(i=>i.id===S.cur);
+const dupOf=(code,exceptId)=>{code=(code||'').trim().toLowerCase();return code?S.items.find(i=>i.id!==exceptId&&(i.code||'').trim().toLowerCase()===code):null};
 $('cat').innerHTML=CATS.map(c=>`<option>${c}</option>`).join('');
 ['entity','fund'].forEach(i=>{$(i).value=S[i]||'';$(i).addEventListener('input',()=>{S[i]=$(i).value;save()})});
-['item','code','desc','uom','rop'].forEach(i=>{
+['item','desc','uom','rop'].forEach(i=>{
   $(i).addEventListener('input',()=>{cur()[i]=$(i).value;save();if(i==='rop')render();else fillSel()});
 });
-function loadMeta(){const c=cur();['item','code','desc','uom','rop'].forEach(i=>$(i).value=c[i]||'');$('cat').value=c.cat;fillSel()}
+function codeCheck(){
+  const d=dupOf($('code').value,S.cur);
+  $('code').classList.toggle('dup',!!d);
+  $('cwarn').textContent=d?'Already used by '+(d.item||'another item'):'';
+  return !d;
+}
+$('code').addEventListener('input',()=>{if(codeCheck()){cur().code=$('code').value.trim();save();fillSel()}});
+$('code').addEventListener('change',()=>{
+  if(!codeCheck()){$('code').value=cur().code||'';setTimeout(()=>{$('cwarn').textContent='Duplicate code not saved. Kept '+($('code').value||'blank')+'.'},0);$('code').classList.remove('dup')}
+});
+function loadMeta(){const c=cur();['item','code','desc','uom','rop'].forEach(i=>$(i).value=c[i]||'');$('code').classList.remove('dup');$('cwarn').textContent='';$('cat').value=c.cat;fillSel()}
 function fillSel(){
   $('isel').innerHTML=CATS.map(c=>{
     const l=S.items.filter(i=>i.cat===c);
@@ -326,7 +362,7 @@ function masterData(){
   const cf=$('mcat').value,q=($('msrch').value||'').toLowerCase();
   return CATS.filter(c=>!cf||c===cf).map(c=>({c,items:S.items.filter(i=>i.cat===c&&((i.code||'')+' '+(i.item||'')+' '+(i.desc||'')).toLowerCase().includes(q)).sort((x,y)=>(x.code||'').localeCompare(y.code||'',undefined,{numeric:true})).map(i=>{
     const rs=compute(i.rows),l=rs[rs.length-1]||{bq:0,bu:0,bc:0},rop=parseFloat(i.rop);
-    return{id:i.id,code:i.code||'',item:i.item||'(unnamed item)',desc:i.desc||'',uom:i.uom||'',qty:l.bq,uc:l.bu,tc:l.bc,rop:isNaN(rop)?'':rop,
+    return{id:i.id,dup:!!dupOf(i.code,i.id),code:i.code||'',item:i.item||'(unnamed item)',desc:i.desc||'',uom:i.uom||'',qty:l.bq,uc:l.bu,tc:l.bc,rop:isNaN(rop)?'':rop,
       st:!rs.length?'No entries':l.bq<=0?'Out of stock':(!isNaN(rop)&&l.bq<=rop)?'Re-order':'In stock'};
   })}));
 }
@@ -336,13 +372,14 @@ function renderMaster(){
   d.forEach(g=>{
     const t=ssum(g.items,'tc');T+=t;n+=g.items.length;
     h+=`<tr class="cat"><td class="l" colspan="5">${esc(g.c)} (${g.items.length})</td><td>${fmt(t)}</td><td colspan="3"></td></tr>`;
-    g.items.forEach(x=>h+=`<tr class="it"><td class="c">${esc(x.code)}</td><td class="l">${esc(x.item)}${x.desc?'<br><small>'+esc(x.desc)+'</small>':''}</td><td class="c">${esc(x.uom)}</td><td>${fq(x.qty)}</td><td>${fmt(x.uc)}</td><td>${fmt(x.tc)}</td><td>${x.rop===''?'':fq(x.rop)}</td><td class="c${x.st==='Re-order'||x.st==='Out of stock'?' low':''}">${x.st}</td><td class="act"><button class="b g" type="button" data-id="${x.id}">Open card</button></td></tr>`);
+    g.items.forEach(x=>h+=`<tr class="it"><td class="c${x.dup?' low':''}"${x.dup?' title="Duplicate item code"':''}>${esc(x.code)}${x.dup?'<br><small>Duplicate code</small>':''}</td><td class="l">${esc(x.item)}${x.desc?'<br><small>'+esc(x.desc)+'</small>':''}</td><td class="c">${esc(x.uom)}</td><td>${fq(x.qty)}</td><td>${fmt(x.uc)}</td><td>${fmt(x.tc)}</td><td>${x.rop===''?'':fq(x.rop)}</td><td class="c${x.st==='Re-order'||x.st==='Out of stock'?' low':''}">${x.st}</td><td class="act"><button class="b g" type="button" data-id="${x.id}">Open card</button></td></tr>`);
   });
   h+=`<tr class="tot"><td class="l" colspan="5">TOTAL (${n} items)</td><td>${fmt(T)}</td><td colspan="3"></td></tr>`;
   $('mb').innerHTML=h;
 }
 function show(v){
-  const sl=v==='L',ss=v==='S',sm=v==='M';
+  const sl=v==='L',ss=v==='S',sm=v==='M',sa=v==='A';
+  $('vA').hidden=!sa;$('tA').classList.toggle('on',sa);
   $('vL').hidden=!sl;$('itemBar').hidden=!sl;
   $('vS').hidden=!ss;$('monBar').hidden=!ss;
   $('vM').hidden=!sm;$('mlBar').hidden=!sm;
@@ -364,6 +401,33 @@ $('mcsv').onclick=()=>{
   a.href=URL.createObjectURL(new Blob([L.join('\n')],{type:'text/csv'}));
   a.download='masterlist-supplies-inventory.csv';a.click();
 };
+$('acat').innerHTML=CATS.map(c=>`<option>${c}</option>`).join('');
+$('abd').valueAsDate=new Date();
+$('af').addEventListener('submit',e=>{
+  e.preventDefault();
+  const m=$('amsg'),name=$('aitem').value.trim(),code=$('acode').value.trim();
+  m.style.color='#b3261e';
+  if(!name){m.textContent='Enter the item name.';return}
+  {const d=dupOf(code);if(d){$('acode').classList.add('dup');m.textContent='Item code '+code+' is already used by '+(d.item||'another item')+' ('+d.cat+').';return}}
+  const bq=parseFloat($('abq').value),bu=parseFloat($('abu').value),hasB=$('abq').value!==''||$('abu').value!=='';
+  if(hasB&&(!(bq>0)||!(bu>=0))){m.textContent='For a beginning balance, enter both quantity and unit cost.';return}
+  const n=newItem($('acat').value);
+  Object.assign(n,{item:name,code,desc:$('adesc').value.trim(),uom:$('auom').value.trim(),rop:$('arop').value});
+  if(hasB)n.rows.push({date:$('abd').value||new Date().toISOString().slice(0,10),ref:'Beginning Balance',type:'B',qty:bq,cost:bu,days:''});
+  S.items.push(n);save();fillSel();
+  m.style.color='#1d6f42';
+  m.innerHTML='Added <b>'+esc(name)+'</b> to '+esc(n.cat)+'. <button class="b g" type="button" id="aM">View masterlist</button> <button class="b g" type="button" id="aC">Open ledger card</button>';
+  $('aM').onclick=()=>show('M');
+  $('aC').onclick=()=>{S.cur=n.id;save();loadMeta();render();show('L')};
+  ['acode','aitem','adesc','auom','arop','abq','abu'].forEach(i=>$(i).value='');$('acode').classList.remove('dup');
+  $('aitem').focus();
+});
+$('acode').addEventListener('input',()=>{
+  const d=dupOf($('acode').value),m=$('amsg');
+  $('acode').classList.toggle('dup',!!d);
+  m.style.color='#b3261e';m.textContent=d?'Item code '+$('acode').value.trim()+' is already used by '+(d.item||'another item')+' ('+d.cat+').':'';
+});
+$('tA').onclick=()=>show('A');
 $('tL').onclick=()=>show('L');$('tS').onclick=()=>show('S');$('tM').onclick=()=>show('M');
 $('mo').oninput=renderSummary;
 $('sprt').onclick=()=>window.print();
