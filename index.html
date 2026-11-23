@@ -50,6 +50,8 @@ button.b.g{background:#fff;color:#14213d}
 .sum tr.cat td{font-weight:700;background:#eef1f5}
 .sum tr.it td.l{padding-left:26px}
 .sum tr.tot td{font-weight:700;border-top:3px double #000}
+.sum td.c{text-align:center}
+.sum .low{color:#b3261e;font-weight:700}
 .sub{text-align:center;margin:-12px 0 18px}
 .foot{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;font-family:"Segoe UI",system-ui,sans-serif}
 .foot .sp{flex:1}
@@ -62,6 +64,7 @@ button.b.g{background:#fff;color:#14213d}
 <div class="bar">
 <button class="tab on" id="tL" type="button">Ledger Card</button>
 <button class="tab" id="tS" type="button">Monthly Summary</button>
+<button class="tab" id="tM" type="button">Masterlist</button>
 </div>
 <div class="bar" id="itemBar">
 <select id="isel" aria-label="Supply item"></select>
@@ -75,6 +78,14 @@ button.b.g{background:#fff;color:#14213d}
 <span class="sp"></span>
 <button class="b g" id="scsv" type="button">Download CSV</button>
 <button class="b g" id="sprt" type="button">Print</button>
+</div>
+
+<div class="bar" id="mlBar" hidden>
+<label>Category <select id="mcat"></select></label>
+<input id="msrch" type="search" placeholder="Search item, code or description" aria-label="Search masterlist">
+<span class="sp"></span>
+<button class="b g" id="mcsv" type="button">Download CSV</button>
+<button class="b g" id="mprt" type="button">Print</button>
 </div>
 
 <div class="sheet" id="vL">
@@ -136,6 +147,16 @@ button.b.g{background:#fff;color:#14213d}
 <tbody id="sb"></tbody>
 </table>
 <p class="note">Amounts in pesos, from the ledger cards. Beginning Balance = cost on hand at the start of the month; Ending Balance = Beginning + Receipts − Issues.</p>
+</div>
+
+<div class="sheet" id="vM" hidden>
+<h1>MASTERLIST OF SUPPLIES INVENTORY</h1>
+<p class="sub" id="msub"></p>
+<div class="scroll"><table class="sum" style="min-width:900px">
+<thead><tr><th>Item Code</th><th style="text-align:left">Item / Description</th><th>Unit</th><th>Qty. on Hand</th><th>Unit Cost</th><th>Total Cost</th><th>Re-order Point</th><th>Status</th><th class="act"></th></tr></thead>
+<tbody id="mb"></tbody>
+</table></div>
+<p class="note">Quantities and costs are the latest balance on each item's ledger card. Click "Open card" to view or add entries.</p>
 </div>
 
 <script>
@@ -301,13 +322,49 @@ function renderSummary(){
   h+=`<tr class="tot"><td class="l">TOTAL</td><td>${fmt(T.op)}</td><td>${fmt(T.rec)}</td><td>${fmt(T.iss)}</td><td>${fmt(T.end)}</td></tr>`;
   $('sb').innerHTML=h;
 }
-function show(v){
-  const sm=v==='S';
-  $('vL').hidden=sm;$('itemBar').hidden=sm;$('vS').hidden=!sm;$('monBar').hidden=!sm;
-  $('tL').classList.toggle('on',!sm);$('tS').classList.toggle('on',sm);
-  if(sm)renderSummary();
+function masterData(){
+  const cf=$('mcat').value,q=($('msrch').value||'').toLowerCase();
+  return CATS.filter(c=>!cf||c===cf).map(c=>({c,items:S.items.filter(i=>i.cat===c&&((i.code||'')+' '+(i.item||'')+' '+(i.desc||'')).toLowerCase().includes(q)).sort((x,y)=>(x.code||'').localeCompare(y.code||'',undefined,{numeric:true})).map(i=>{
+    const rs=compute(i.rows),l=rs[rs.length-1]||{bq:0,bu:0,bc:0},rop=parseFloat(i.rop);
+    return{id:i.id,code:i.code||'',item:i.item||'(unnamed item)',desc:i.desc||'',uom:i.uom||'',qty:l.bq,uc:l.bu,tc:l.bc,rop:isNaN(rop)?'':rop,
+      st:!rs.length?'No entries':l.bq<=0?'Out of stock':(!isNaN(rop)&&l.bq<=rop)?'Re-order':'In stock'};
+  })}));
 }
-$('tL').onclick=()=>show('L');$('tS').onclick=()=>show('S');
+function renderMaster(){
+  const d=masterData();let h='',T=0,n=0;
+  $('msub').textContent=(S.entity||'')+' · Fund Cluster: '+(S.fund||'')+' · As of '+new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  d.forEach(g=>{
+    const t=ssum(g.items,'tc');T+=t;n+=g.items.length;
+    h+=`<tr class="cat"><td class="l" colspan="5">${esc(g.c)} (${g.items.length})</td><td>${fmt(t)}</td><td colspan="3"></td></tr>`;
+    g.items.forEach(x=>h+=`<tr class="it"><td class="c">${esc(x.code)}</td><td class="l">${esc(x.item)}${x.desc?'<br><small>'+esc(x.desc)+'</small>':''}</td><td class="c">${esc(x.uom)}</td><td>${fq(x.qty)}</td><td>${fmt(x.uc)}</td><td>${fmt(x.tc)}</td><td>${x.rop===''?'':fq(x.rop)}</td><td class="c${x.st==='Re-order'||x.st==='Out of stock'?' low':''}">${x.st}</td><td class="act"><button class="b g" type="button" data-id="${x.id}">Open card</button></td></tr>`);
+  });
+  h+=`<tr class="tot"><td class="l" colspan="5">TOTAL (${n} items)</td><td>${fmt(T)}</td><td colspan="3"></td></tr>`;
+  $('mb').innerHTML=h;
+}
+function show(v){
+  const sl=v==='L',ss=v==='S',sm=v==='M';
+  $('vL').hidden=!sl;$('itemBar').hidden=!sl;
+  $('vS').hidden=!ss;$('monBar').hidden=!ss;
+  $('vM').hidden=!sm;$('mlBar').hidden=!sm;
+  $('tL').classList.toggle('on',sl);$('tS').classList.toggle('on',ss);$('tM').classList.toggle('on',sm);
+  if(ss)renderSummary();if(sm)renderMaster();
+}
+$('mcat').innerHTML='<option value="">All categories</option>'+CATS.map(c=>`<option>${c}</option>`).join('');
+$('mcat').onchange=renderMaster;$('msrch').oninput=renderMaster;
+$('mprt').onclick=()=>window.print();
+$('mb').addEventListener('click',e=>{
+  const b=e.target.closest('button[data-id]');if(!b)return;
+  S.cur=b.dataset.id;save();loadMeta();render();show('L');
+});
+$('mcsv').onclick=()=>{
+  const q=v=>'"'+String(v).replace(/"/g,'""')+'"';
+  const L=['Category,Item Code,Item,Description,Unit,Qty on Hand,Unit Cost,Total Cost,Re-order Point,Status'];
+  masterData().forEach(g=>g.items.forEach(x=>L.push([q(g.c),q(x.code),q(x.item),q(x.desc),q(x.uom),x.qty,x.uc.toFixed(2),x.tc.toFixed(2),x.rop,q(x.st)].join(','))));
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([L.join('\n')],{type:'text/csv'}));
+  a.download='masterlist-supplies-inventory.csv';a.click();
+};
+$('tL').onclick=()=>show('L');$('tS').onclick=()=>show('S');$('tM').onclick=()=>show('M');
 $('mo').oninput=renderSummary;
 $('sprt').onclick=()=>window.print();
 $('scsv').onclick=()=>{
