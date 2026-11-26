@@ -55,6 +55,8 @@ button.b.g{background:#fff;color:#14213d}
 .sum tr.tot td{font-weight:700;border-top:3px double #000}
 .sum td.c{text-align:center}
 .sum .low{color:#b3261e;font-weight:700}
+.sum mark{background:#ffe58a;color:#000;padding:0 1px}
+#qs{width:100%;font:inherit;font-size:16px;padding:10px 12px;background:#fff;border:1.5px solid #8895a5;margin-bottom:14px}
 .sub{text-align:center;margin:-12px 0 18px}
 .foot{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;font-family:"Segoe UI",system-ui,sans-serif}
 .foot .sp{flex:1}
@@ -69,6 +71,7 @@ button.b.g{background:#fff;color:#14213d}
 <button class="tab" id="tS" type="button">Monthly Summary</button>
 <button class="tab" id="tM" type="button">Masterlist</button>
 <button class="tab" id="tA" type="button">Add Item</button>
+<button class="tab" id="tQ" type="button">Search</button>
 </div>
 <div class="bar" id="itemBar">
 <select id="isel" aria-label="Supply item"></select>
@@ -140,17 +143,17 @@ button.b.g{background:#fff;color:#14213d}
 <span class="sp"></span>
 <button class="b g" id="clr" type="button">Clear all entries</button>
 </div>
-<p class="note">Balance unit cost = balance total cost ÷ balance quantity (moving average), recomputed after every receipt. The unit cost is rounded to two decimals and stays fixed on every issue until the next receipt changes it. Issue total cost = quantity × that unit cost.</p>
+<p class="note">Balance unit cost = balance total cost ÷ balance quantity (moving average), recomputed after every receipt. The balance unit cost is rounded to two decimals, and the balance total cost = balance quantity × that unit cost. The unit cost stays fixed on every issue until the next receipt changes it.</p>
 </div>
 
 <div class="sheet" id="vS" hidden>
 <h1>MONTHLY SUMMARY OF SUPPLIES INVENTORY</h1>
 <p class="sub" id="ssub"></p>
-<table class="sum">
-<thead><tr><th style="text-align:left">Category / Item</th><th>Beginning Balance</th><th>Receipts</th><th>Issues</th><th>Ending Balance</th></tr></thead>
+<table class="sum" style="min-width:900px">
+<thead><tr><th style="text-align:left">Category / Item and Description</th><th>Unit</th><th>Qty. Issued</th><th>Beginning Balance (₱)</th><th>Receipts (₱)</th><th>Issues (₱)</th><th>Ending Balance (₱)</th></tr></thead>
 <tbody id="sb"></tbody>
 </table>
-<p class="note">Amounts in pesos, from the ledger cards. Beginning Balance = cost on hand at the start of the month; Ending Balance = Beginning + Receipts − Issues.</p>
+<p class="note">Amounts in pesos, from the ledger cards. Beginning Balance = cost on hand at the start of the month; Ending Balance is the last balance on each ledger card. It can differ from Beginning + Receipts − Issues by a few centavos because unit costs are rounded to two decimals.</p>
 </div>
 
 <div class="sheet" id="vA" hidden>
@@ -176,6 +179,16 @@ button.b.g{background:#fff;color:#14213d}
 <p class="note">Leave the beginning balance empty if the item has no stock yet. You can enter a beginning balance or receipts later on its ledger card.</p>
 </div>
 
+<div class="sheet" id="vQ" hidden>
+<h1>SEARCH ITEMS</h1>
+<input id="qs" type="search" placeholder="Type an item code, item name or description" aria-label="Search items" autocomplete="off">
+<p class="sub" id="qinfo" style="margin:0 0 10px;text-align:left"></p>
+<div class="scroll"><table class="sum" style="min-width:900px">
+<thead><tr><th>Item Code</th><th style="text-align:left">Item / Description</th><th>Category</th><th>Unit</th><th>Qty. on Hand</th><th>Unit Cost</th><th>Total Cost</th><th>Status</th><th class="act"></th></tr></thead>
+<tbody id="qb"></tbody>
+</table></div>
+</div>
+
 <div class="sheet" id="vM" hidden>
 <h1>MASTERLIST OF SUPPLIES INVENTORY</h1>
 <p class="sub" id="msub"></p>
@@ -186,13 +199,13 @@ button.b.g{background:#fff;color:#14213d}
 <p class="note">Quantities and costs are the latest balance on each item's ledger card. Click "Open card" to view or add entries.</p>
 </div>
 
-<p class="note" style="text-align:center;max-width:1150px;margin:10px auto 0">Version 2026-11-25 (unit costs rounded to 2 decimals)</p>
+<p class="note" style="text-align:center;max-width:1150px;margin:10px auto 0">Version 2026-11-25f (summary item with description)</p>
 
 <script>
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const KEY='slc-v1';
-const CATS=['Office Supplies Inventory','Housekeeping/Cleaning Supplies','Electrical Supplies and Materials Inventory','Other Supplies Inventory'];
+const CATS=['Office Supplies Inventory','Housekeeping/Cleaning Supplies','Electrical Supplies and Materials Inventory','Other Supplies and Materials Inventory'];
 const newItem=cat=>({id:'i'+Date.now()+Math.floor(Math.random()*999),cat:cat||CATS[0],item:'',code:'',desc:'',uom:'',rop:'',rows:[]});
 let S=null;
 try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
@@ -206,6 +219,7 @@ if(S.entity===undefined)S.entity='Zamboanga City Special Economic Zone Authority
 if(S.fund===undefined)S.fund='Regular';
 if(!S.items.length)S.items.push(newItem());
 if(!S.items.some(i=>i.id===S.cur))S.cur=S.items[0].id;
+S.items.forEach(i=>{if(i.cat==='Other Supplies Inventory')i.cat='Other Supplies and Materials Inventory'});
 const cur=()=>S.items.find(i=>i.id===S.cur);
 const dupOf=(code,exceptId)=>{code=(code||'').trim().toLowerCase();return code?S.items.find(i=>i.id!==exceptId&&(i.code||'').trim().toLowerCase()===code):null};
 $('cat').innerHTML=CATS.map(c=>`<option>${c}</option>`).join('');
@@ -251,14 +265,15 @@ function compute(rows){
     const o={...r,bad:false};
     if(r.type==='I'){
       if(r.qty>q+1e-9)o.bad=true;
-      o.iu=fu;o.ic=r2(r.qty*fu);q-=r.qty;c-=o.ic;
-      if(q<1e-9){q=0;c=0}
+      o.iu=fu;o.ic=r2(r.qty*fu);q-=r.qty;
+      if(q<1e-9){q=0;c=0}else c=r2(q*fu);
     }else{
       const cst=r2(r.cost);o.cost=cst;
       const t=r2(r.qty*cst);
       if(r.type==='R')o.rc=t;
       q+=r.qty;c+=t;
       fu=q>0?r2(c/q):0;
+      c=q>0?r2(q*fu):0;
     }
     o.bq=q;o.bc=c;o.bu=q>0?fu:0;
     return o;
@@ -334,16 +349,16 @@ function summaryData(){
   const m=$('mo').value;if(!m)return null;
   const st=m+'-01',en=m+'-31';
   const cats=CATS.map(c=>({c,items:S.items.filter(i=>i.cat===c).map(i=>{
-    const rs=compute(i.rows);let op=0,rec=0,iss=0,end=0;
+    const rs=compute(i.rows);let op=0,rec=0,iss=0,end=0,qi=0;
     rs.forEach(r=>{
       if(r.date<st)op=r.bc;
       if(r.date<=en)end=r.bc;
       if(r.date>=st&&r.date<=en){
         if(r.type==='B')op+=r2(r.qty*r.cost);
-        else if(r.type==='R')rec+=r.rc;else iss+=r.ic;
+        else if(r.type==='R')rec+=r.rc;else{iss+=r.ic;qi+=r.qty}
       }
     });
-    return{name:(i.code?i.code+' – ':'')+(i.item||'(unnamed item)'),op,rec,iss,end};
+    return{name:(i.code?i.code+' – ':'')+(i.item||'(unnamed item)'),desc:i.desc||'',uom:i.uom||'',qi,op,rec,iss,end};
   })}));
   return{m,cats};
 }
@@ -356,10 +371,10 @@ function renderSummary(){
   d.cats.forEach(g=>{
     const t={op:ssum(g.items,'op'),rec:ssum(g.items,'rec'),iss:ssum(g.items,'iss'),end:ssum(g.items,'end')};
     for(const k in T)T[k]+=t[k];
-    h+=`<tr class="cat"><td class="l">${esc(g.c)}</td><td>${fmt(t.op)}</td><td>${fmt(t.rec)}</td><td>${fmt(t.iss)}</td><td>${fmt(t.end)}</td></tr>`;
-    g.items.forEach(x=>h+=`<tr class="it"><td class="l">${esc(x.name)}</td><td>${fmt(x.op)}</td><td>${fmt(x.rec)}</td><td>${fmt(x.iss)}</td><td>${fmt(x.end)}</td></tr>`);
+    h+=`<tr class="cat"><td class="l" colspan="3">${esc(g.c)}</td><td>${fmt(t.op)}</td><td>${fmt(t.rec)}</td><td>${fmt(t.iss)}</td><td>${fmt(t.end)}</td></tr>`;
+    g.items.forEach(x=>h+=`<tr class="it"><td class="l">${esc(x.name)}${x.desc?'<br><small>'+esc(x.desc)+'</small>':''}</td><td class="c">${esc(x.uom)}</td><td>${fq(x.qi)}</td><td>${fmt(x.op)}</td><td>${fmt(x.rec)}</td><td>${fmt(x.iss)}</td><td>${fmt(x.end)}</td></tr>`);
   });
-  h+=`<tr class="tot"><td class="l">TOTAL</td><td>${fmt(T.op)}</td><td>${fmt(T.rec)}</td><td>${fmt(T.iss)}</td><td>${fmt(T.end)}</td></tr>`;
+  h+=`<tr class="tot"><td class="l" colspan="3">TOTAL</td><td>${fmt(T.op)}</td><td>${fmt(T.rec)}</td><td>${fmt(T.iss)}</td><td>${fmt(T.end)}</td></tr>`;
   $('sb').innerHTML=h;
 }
 function masterData(){
@@ -381,8 +396,30 @@ function renderMaster(){
   h+=`<tr class="tot"><td class="l" colspan="5">TOTAL (${n} items)</td><td>${fmt(T)}</td><td colspan="3"></td></tr>`;
   $('mb').innerHTML=h;
 }
+function renderSearch(){
+  const raw=$('qs').value.trim(),toks=raw.toLowerCase().split(/\s+/).filter(Boolean);
+  const esr=t=>t.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const re=toks.length?new RegExp('('+toks.map(esr).join('|')+')','gi'):null;
+  const hl=t=>re?String(t).split(re).map((p,i)=>i%2?'<mark>'+esc(p)+'</mark>':esc(p)).join(''):esc(t);
+  if(!toks.length){$('qb').innerHTML='';$('qinfo').textContent='Start typing to search all '+S.items.length+' items.';return}
+  const hits=S.items.filter(i=>{const hay=((i.code||'')+' '+(i.item||'')+' '+(i.desc||'')+' '+(i.uom||'')).toLowerCase();return toks.every(k=>hay.includes(k))})
+    .sort((x,y)=>(x.code||'').localeCompare(y.code||'',undefined,{numeric:true}));
+  $('qinfo').textContent=hits.length+(hits.length===1?' item found':' items found');
+  $('qb').innerHTML=hits.length?hits.map(i=>{
+    const rs=compute(i.rows),l=rs[rs.length-1]||{bq:0,bu:0,bc:0},rop=parseFloat(i.rop);
+    const st=!rs.length?'No entries':l.bq<=0?'Out of stock':(!isNaN(rop)&&l.bq<=rop)?'Re-order':'In stock';
+    return `<tr class="it"><td class="c">${hl(i.code||'')}</td><td class="l">${hl(i.item||'(unnamed item)')}${i.desc?'<br><small>'+hl(i.desc)+'</small>':''}</td><td class="c">${esc(i.cat)}</td><td class="c">${esc(i.uom||'')}</td><td>${fq(l.bq)}</td><td>${fmt(l.bu)}</td><td>${fmt(l.bc)}</td><td class="c${st==='Re-order'||st==='Out of stock'?' low':''}">${st}</td><td class="act"><button class="b g" type="button" data-id="${i.id}">Open card</button></td></tr>`;
+  }).join(''):'<tr><td class="c" colspan="9" style="padding:18px">No item matches "'+esc(raw)+'". Try a different code or word.</td></tr>';
+}
+$('qs').addEventListener('input',renderSearch);
+$('qb').addEventListener('click',e=>{
+  const b=e.target.closest('button[data-id]');if(!b)return;
+  S.cur=b.dataset.id;save();loadMeta();render();show('L');
+});
 function show(v){
-  const sl=v==='L',ss=v==='S',sm=v==='M',sa=v==='A';
+  const sl=v==='L',ss=v==='S',sm=v==='M',sa=v==='A',sq=v==='Q';
+  $('vQ').hidden=!sq;$('tQ').classList.toggle('on',sq);
+  if(sq){renderSearch();$('qs').focus()}
   $('vA').hidden=!sa;$('tA').classList.toggle('on',sa);
   $('vL').hidden=!sl;$('itemBar').hidden=!sl;
   $('vS').hidden=!ss;$('monBar').hidden=!ss;
@@ -432,14 +469,15 @@ $('acode').addEventListener('input',()=>{
   m.style.color='#b3261e';m.textContent=d?'Item code '+$('acode').value.trim()+' is already used by '+(d.item||'another item')+' ('+d.cat+').':'';
 });
 $('tA').onclick=()=>show('A');
+$('tQ').onclick=()=>show('Q');
 $('tL').onclick=()=>show('L');$('tS').onclick=()=>show('S');$('tM').onclick=()=>show('M');
 $('mo').oninput=renderSummary;
 $('sprt').onclick=()=>window.print();
 $('scsv').onclick=()=>{
   const d=summaryData();if(!d)return;
   const q=v=>'"'+String(v).replace(/"/g,'""')+'"';
-  const L=['Category,Item,Beginning Balance,Receipts,Issues,Ending Balance'];
-  d.cats.forEach(g=>g.items.forEach(x=>L.push([q(g.c),q(x.name),x.op.toFixed(2),x.rec.toFixed(2),x.iss.toFixed(2),x.end.toFixed(2)].join(','))));
+  const L=['Category,Item,Description,Unit,Qty Issued,Beginning Balance,Receipts,Issues,Ending Balance'];
+  d.cats.forEach(g=>g.items.forEach(x=>L.push([q(g.c),q(x.name),q(x.desc),q(x.uom),x.qi,x.op.toFixed(2),x.rec.toFixed(2),x.iss.toFixed(2),x.end.toFixed(2)].join(','))));
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([L.join('\n')],{type:'text/csv'}));
   a.download='monthly-summary-'+d.m+'.csv';a.click();
